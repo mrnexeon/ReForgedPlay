@@ -16,6 +16,7 @@ import net.minecraft.network.ClientConnection;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import com.replaymod.playerview.HudStatePayload;
 import net.neoforged.neoforge.network.registration.NetworkRegistry;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import org.apache.logging.log4j.LogManager;
@@ -75,6 +76,8 @@ public class ReplayModRecording implements Module {
     static void registerNetwork(RegisterPayloadHandlersEvent event) {
         final PayloadRegistrar registrar = event.registrar("1");
         registrar.commonToClient(Restrictions.ID, Restrictions.CODEC, (payload, context) -> {});
+        // Only ever written into replays by the recorder, never sent by servers, hence optional
+        registrar.optional().playToClient(HudStatePayload.ID, HudStatePayload.CODEC, (payload, context) -> {});
     }
 
     @Override

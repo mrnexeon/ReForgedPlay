@@ -14,6 +14,7 @@ import com.replaymod.core.versions.MCVer.Keyboard;
 import com.replaymod.replay.camera.CameraController;
 import com.replaymod.replay.camera.CameraControllerRegistry;
 import com.replaymod.replay.camera.CameraEntity;
+import com.replaymod.playerview.PlayerViewHud;
 import com.replaymod.replay.camera.ClassicCameraController;
 import com.replaymod.replay.camera.VanillaCameraController;
 import com.replaymod.replay.gui.screen.GuiModCompatWarning;
@@ -153,6 +154,7 @@ public class ReplayModReplay implements Module {
         });
 
         new GuiHandler(this).register();
+        new PlayerViewHud().register();
     }
 
     public void startReplay(File file) throws IOException {

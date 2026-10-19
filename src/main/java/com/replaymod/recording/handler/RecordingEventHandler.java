@@ -3,6 +3,8 @@ package com.replaymod.recording.handler;
 import com.replaymod.core.events.PreRenderCallback;
 import com.replaymod.recording.mixin.IntegratedServerAccessor;
 import com.replaymod.recording.packet.PacketListener;
+import com.replaymod.playerview.HudStateRecorder;
+import net.minecraft.network.packet.s2c.common.CustomPayloadS2CPacket;
 import de.johni0702.minecraft.gui.utils.EventRegistrations;
 import de.johni0702.minecraft.gui.versions.callbacks.PreTickCallback;
 import net.minecraft.client.MinecraftClient;
@@ -70,6 +72,7 @@ public class RecordingEventHandler extends EventRegistrations {
     //#endif
     private final List<ItemStack> playerItems = DefaultedList.ofSize(EQUIPMENT_SLOTS, ItemStack.EMPTY);    private int ticksSinceLastCorrection;
     private boolean wasSleeping;
+    private final HudStateRecorder hudStateRecorder = new HudStateRecorder();
     private int lastRiding = -1;
     private Integer rotationYawHeadBefore;
 
@@ -323,6 +326,12 @@ public class RecordingEventHandler extends EventRegistrations {
             if(!player.isSleeping() && wasSleeping) {
                 packetListener.save(new EntityAnimationS2CPacket(player, 2));
                 wasSleeping = false;
+            }
+
+            // HUD state (hotbar, health, food, XP, armor, air, effects) for first-person playback
+            CustomPayloadS2CPacket hudState = hudStateRecorder.tick(player, mc.interactionManager);
+            if (hudState != null) {
+                packetListener.save(hudState);
             }
 
         } catch(Exception e1) {

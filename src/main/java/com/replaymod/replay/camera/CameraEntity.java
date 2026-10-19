@@ -8,6 +8,7 @@ import com.replaymod.core.events.PreRenderCallback;
 import com.replaymod.core.events.PreRenderHandCallback;
 import com.replaymod.core.events.SettingsChangedCallback;
 import com.replaymod.replay.ReplayHandler;
+import com.replaymod.playerview.PlayerViewHud;
 import com.replaymod.replay.events.RenderHotbarCallback;
 import com.replaymod.replay.events.RenderSpectatorCrosshairCallback;
 import com.replaymod.replay.mixin.EntityPlayerAccessor;
@@ -838,7 +839,8 @@ public class CameraEntity
 
         { on(RenderHotbarCallback.EVENT, this::shouldRenderHotbar); }
         private Boolean shouldRenderHotbar() {
-            return false;
+            // Show the recording player's hotbar when spectating them in first person, otherwise hide it
+            return PlayerViewHud.activeState() != null ? null : false;
         }
 
         { on(SettingsChangedCallback.EVENT, this::onSettingsChanged); }

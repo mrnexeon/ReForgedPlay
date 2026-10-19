@@ -1,6 +1,9 @@
 package com.replaymod.replay.mixin;
 
+import com.replaymod.playerview.HudState;
+import com.replaymod.playerview.PlayerViewHud;
 import com.replaymod.replay.ReplayModReplay;
+import net.minecraft.world.GameMode;
 import com.replaymod.replay.camera.CameraEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
@@ -136,4 +139,31 @@ public abstract class MixinPlayerControllerMP {
     //$$     }
     //$$ }
     //#endif
+
+    // While the recording player's HUD is drawn, report their game mode instead of the replay's spectator mode,
+    // so hotbar, hearts, armor, food and XP are drawn the way they appeared to them.
+
+    @Inject(method = "getCurrentGameMode", at = @At("HEAD"), cancellable = true)
+    private void replayModPlayerView_getCurrentGameMode(CallbackInfoReturnable<GameMode> ci) {
+        HudState state = PlayerViewHud.activeState();
+        if (state != null) {
+            ci.setReturnValue(GameMode.byId(state.gameMode));
+        }
+    }
+
+    @Inject(method = "hasStatusBars", at = @At("HEAD"), cancellable = true)
+    private void replayModPlayerView_hasStatusBars(CallbackInfoReturnable<Boolean> ci) {
+        HudState state = PlayerViewHud.activeState();
+        if (state != null) {
+            ci.setReturnValue(GameMode.byId(state.gameMode).isSurvivalLike());
+        }
+    }
+
+    @Inject(method = "hasExperienceBar", at = @At("HEAD"), cancellable = true)
+    private void replayModPlayerView_hasExperienceBar(CallbackInfoReturnable<Boolean> ci) {
+        HudState state = PlayerViewHud.activeState();
+        if (state != null) {
+            ci.setReturnValue(GameMode.byId(state.gameMode).isSurvivalLike());
+        }
+    }
 }

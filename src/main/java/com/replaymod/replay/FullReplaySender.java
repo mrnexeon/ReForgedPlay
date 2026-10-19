@@ -15,7 +15,7 @@ import com.replaymod.replaystudio.lib.viaversion.api.protocol.packet.State;
 import com.replaymod.replaystudio.protocol.PacketType;
 import com.replaymod.replaystudio.protocol.PacketTypeRegistry;
 import com.replaymod.replaystudio.replay.ReplayFile;
-import com.replaymod.playerview.HudStatePayload;
+import com.replaymod.playerview.PlayerViewPayloads;
 import de.johni0702.minecraft.gui.utils.EventRegistrations;
 import de.johni0702.minecraft.gui.versions.callbacks.PreTickCallback;
 import io.netty.buffer.ByteBuf;
@@ -602,8 +602,8 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
             //#endif
             String channelNameStr = channelName.toString();
 
-            if (HudStatePayload.CHANNEL.equals(channelName)) {
-                return null; // recording player's HUD state, read from the replay file by PlayerViewHud instead
+            if (PlayerViewPayloads.isPlayerViewChannel(channelName)) {
+                return null; // recording player's HUD, menus and cursor, read from the replay file by PlayerViewHud
             }
 
             if (channelNameStr.startsWith("fabric-screen-handler-api-v")) {

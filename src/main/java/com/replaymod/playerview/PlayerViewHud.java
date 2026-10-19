@@ -29,8 +29,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Shows the recording player's HUD (hotbar, hearts, armor, food, XP, air, effect icons) while the replay viewer
- * spectates that player in first person.
+ * Shows the recording player's HUD (hotbar, hearts, armor, food, XP, air, effect icons) and their open menu with
+ * cursor while the replay viewer spectates that player in first person.
  *
  * In 1.21.1 the HUD reads hotbar, health, armor, food and air from the spectated player, and XP and effect icons from
  * {@code client.player}, which in a replay is the {@link CameraEntity}. While the HUD is drawn this class therefore
@@ -50,7 +50,8 @@ public class PlayerViewHud extends EventRegistrations {
 
     /** Identifies the replay a background index belongs to; replaced on every open and cleared on close. */
     private volatile Object indexToken;
-    private volatile HudTimeline timeline;
+    private volatile RecordedTracks tracks;
+    private final MenuPlayer menuPlayer = new MenuPlayer();
 
     // Render-thread only state
     private HudState active;
@@ -58,6 +59,10 @@ public class PlayerViewHud extends EventRegistrations {
     private PlayerEntity activeView;
     private int savedXpLevel, savedTotalXp;
     private float savedXpProgress;
+
+    /** Set in RenderGuiEvent.Pre when the recording player is spectated in first person, for drawing their menu. */
+    private PlayerEntity menuView;
+    private int menuTime;
 
     private HudState appliedState;
     private Entity appliedEntity;
@@ -108,18 +113,18 @@ public class PlayerViewHud extends EventRegistrations {
     private void onReplayOpened(ReplayHandler replayHandler) {
         Object token = new Object();
         indexToken = token;
-        timeline = null;
+        tracks = null;
         ReplayFile replayFile = replayHandler.getReplayFile();
         Thread thread = new Thread(() -> {
             try {
-                HudTimeline built = HudTimeline.build(replayFile, () -> indexToken != token);
+                RecordedTracks built = RecordedTracks.build(replayFile, () -> indexToken != token);
                 if (built != null && indexToken == token) {
-                    timeline = built;
+                    tracks = built;
                 }
             } catch (Throwable t) {
-                LOGGER.error("Failed to index the recording player's HUD state", t);
+                LOGGER.error("Failed to index the recording player's view", t);
             }
-        }, "replaymod-hud-index");
+        }, "replaymod-player-view-index");
         thread.setDaemon(true);
         thread.start();
     }
@@ -127,8 +132,10 @@ public class PlayerViewHud extends EventRegistrations {
     { on(ReplayClosedCallback.EVENT, this::onReplayClosed); }
     private void onReplayClosed(ReplayHandler replayHandler) {
         indexToken = null;
-        timeline = null;
+        tracks = null;
         restore();
+        menuView = null;
+        menuPlayer.reset();
         appliedState = null;
         appliedEntity = null;
         derivedFor = null;
@@ -139,18 +146,24 @@ public class PlayerViewHud extends EventRegistrations {
 
     private void onRenderGuiPre(RenderGuiEvent.Pre event) {
         restore();
+        menuView = null;
 
         ReplayHandler replayHandler = ReplayModReplay.instance.getReplayHandler();
-        HudTimeline timeline = this.timeline;
-        if (replayHandler == null || timeline == null || mc.world == null) return;
+        RecordedTracks tracks = this.tracks;
+        if (replayHandler == null || tracks == null || mc.world == null) return;
 
         CameraEntity camera = replayHandler.getCameraEntity();
         Entity view = mc.getCameraEntity();
         if (camera == null || !(view instanceof PlayerEntity) || view == camera) return;
         if (!mc.options.getPerspective().isFirstPerson()) return;
 
-        HudState state = timeline.at(replayHandler.getReplaySender().currentTimeStamp(), mc.world.getRegistryManager());
+        int time = replayHandler.getReplaySender().currentTimeStamp();
+        HudState state = tracks.hud.at(time, mc.world.getRegistryManager());
         if (state == null || state.entityId == HudState.UNKNOWN_ENTITY || state.entityId != view.getId()) return;
+
+        // This is the recording player: their menu is drawn after the HUD, in RenderGuiEvent.Post
+        menuView = (PlayerEntity) view;
+        menuTime = time;
 
         PlayerEntity player = (PlayerEntity) view;
         if (state != appliedState || view != appliedEntity) {
@@ -176,7 +189,22 @@ public class PlayerViewHud extends EventRegistrations {
     }
 
     private void onRenderGuiPost(RenderGuiEvent.Post event) {
+        // Restore first: the menu must see the replay's real game mode (the inventory screen would otherwise switch
+        // to the creative inventory for players recorded in creative mode).
         restore();
+
+        PlayerEntity view = menuView;
+        menuView = null;
+        RecordedTracks tracks = this.tracks;
+        if (view == null || tracks == null || mc.world == null) {
+            menuPlayer.reset();
+            return;
+        }
+        ScreenState screen = tracks.screen.at(menuTime, mc.world.getRegistryManager());
+        float tickDelta = event.getPartialTick().getTickDelta(false);
+        // Interpolate the cursor within the current tick for smooth movement, including in slow motion
+        CursorTrack.Sample cursor = tracks.cursor.sample(menuTime);
+        menuPlayer.render(event.getGuiGraphics(), screen, cursor, tickDelta, view);
     }
 
     private void restore() {

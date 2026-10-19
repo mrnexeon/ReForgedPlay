@@ -1,9 +1,11 @@
 package com.replaymod.recording.handler;
 
 import com.replaymod.core.events.PreRenderCallback;
+import com.replaymod.core.events.PostRenderCallback;
 import com.replaymod.recording.mixin.IntegratedServerAccessor;
 import com.replaymod.recording.packet.PacketListener;
 import com.replaymod.playerview.HudStateRecorder;
+import com.replaymod.playerview.ScreenRecorder;
 import net.minecraft.network.packet.s2c.common.CustomPayloadS2CPacket;
 import de.johni0702.minecraft.gui.utils.EventRegistrations;
 import de.johni0702.minecraft.gui.versions.callbacks.PreTickCallback;
@@ -73,6 +75,18 @@ public class RecordingEventHandler extends EventRegistrations {
     private final List<ItemStack> playerItems = DefaultedList.ofSize(EQUIPMENT_SLOTS, ItemStack.EMPTY);    private int ticksSinceLastCorrection;
     private boolean wasSleeping;
     private final HudStateRecorder hudStateRecorder = new HudStateRecorder();
+    private final ScreenRecorder screenRecorder = new ScreenRecorder();
+
+    // Open menus and the cursor are captured every frame, so cursor movement is smooth on playback
+    { on(PostRenderCallback.EVENT, this::onPostRender); }
+    private void onPostRender() {
+        if (mc.player == null) return;
+        try {
+            screenRecorder.frame(mc, packet -> packetListener.save(packet));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
     private int lastRiding = -1;
     private Integer rotationYawHeadBefore;
 

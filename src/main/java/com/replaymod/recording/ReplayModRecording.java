@@ -17,6 +17,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import com.replaymod.playerview.HudStatePayload;
+import com.replaymod.playerview.PlayerViewPayloads;
 import net.neoforged.neoforge.network.registration.NetworkRegistry;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import org.apache.logging.log4j.LogManager;
@@ -78,6 +79,8 @@ public class ReplayModRecording implements Module {
         registrar.commonToClient(Restrictions.ID, Restrictions.CODEC, (payload, context) -> {});
         // Only ever written into replays by the recorder, never sent by servers, hence optional
         registrar.optional().playToClient(HudStatePayload.ID, HudStatePayload.CODEC, (payload, context) -> {});
+        registrar.optional().playToClient(PlayerViewPayloads.Screen.ID, PlayerViewPayloads.Screen.CODEC, (payload, context) -> {});
+        registrar.optional().playToClient(PlayerViewPayloads.Cursor.ID, PlayerViewPayloads.Cursor.CODEC, (payload, context) -> {});
     }
 
     @Override

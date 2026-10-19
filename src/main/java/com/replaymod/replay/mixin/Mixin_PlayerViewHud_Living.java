@@ -14,16 +14,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.Collection;
 
 /**
- * While the recording player's HUD is drawn, report their recorded armor and effects for the spectated player and the
- * replay camera, which is where the HUD reads them from.
+ * While the recording player is spectated in first person, report their recorded armor and effects for the spectated
+ * player and the replay camera, which is where the HUD, lighting (night vision, darkness) and fog read them from.
  */
 @Mixin(LivingEntity.class)
 public abstract class Mixin_PlayerViewHud_Living {
     @Inject(method = "getArmor", at = @At("HEAD"), cancellable = true)
     private void replayModPlayerView_getArmor(CallbackInfoReturnable<Integer> ci) {
         if (PlayerViewHud.isSubject(this)) {
-            HudState state = PlayerViewHud.activeState();
-            ci.setReturnValue(state.armor);
+            HudState state = PlayerViewHud.frameState();
+            if (state != null) ci.setReturnValue(state.armor);
         }
     }
 

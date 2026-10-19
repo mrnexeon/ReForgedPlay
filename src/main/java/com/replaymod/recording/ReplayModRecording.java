@@ -81,6 +81,7 @@ public class ReplayModRecording implements Module {
         registrar.optional().playToClient(HudStatePayload.ID, HudStatePayload.CODEC, (payload, context) -> {});
         registrar.optional().playToClient(PlayerViewPayloads.Screen.ID, PlayerViewPayloads.Screen.CODEC, (payload, context) -> {});
         registrar.optional().playToClient(PlayerViewPayloads.Cursor.ID, PlayerViewPayloads.Cursor.CODEC, (payload, context) -> {});
+        registrar.optional().playToClient(PlayerViewPayloads.Camera.ID, PlayerViewPayloads.Camera.CODEC, (payload, context) -> {});
     }
 
     @Override

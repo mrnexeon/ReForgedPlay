@@ -32,11 +32,14 @@ public final class RecordedTracks {
     public final PayloadTimeline<HudState> hud;
     public final PayloadTimeline<ScreenState> screen;
     public final CursorTrack cursor;
+    public final CameraTrack camera;
 
-    private RecordedTracks(PayloadTimeline<HudState> hud, PayloadTimeline<ScreenState> screen, CursorTrack cursor) {
+    private RecordedTracks(PayloadTimeline<HudState> hud, PayloadTimeline<ScreenState> screen, CursorTrack cursor,
+                           CameraTrack camera) {
         this.hud = hud;
         this.screen = screen;
         this.cursor = cursor;
+        this.camera = camera;
     }
 
     private static final PayloadTimeline.Codec<HudState> HUD_CODEC = new PayloadTimeline.Codec<HudState>() {
@@ -61,6 +64,8 @@ public final class RecordedTracks {
         Raw hud = new Raw(), screen = new Raw();
         List<int[]> cursorEntries = new ArrayList<>();
         List<float[]> cursorPositions = new ArrayList<>();
+        List<Integer> cameraTimes = new ArrayList<>();
+        List<CameraSample> cameraSamples = new ArrayList<>();
 
         try (ReplayInputStream in = replayFile.getPacketData(getPacketTypeRegistry(State.LOGIN))) {
             PacketData data;
@@ -85,6 +90,12 @@ public final class RecordedTracks {
                         int buttons = buf.readByte();
                         cursorEntries.add(new int[]{time, buttons});
                         cursorPositions.add(new float[]{x, y});
+                    } else if (PlayerViewPayloads.CAMERA_CHANNEL.equals(channel)) {
+                        CameraSample sample = CameraSample.decode(buf);
+                        if (sample != null) {
+                            cameraTimes.add(time);
+                            cameraSamples.add(sample);
+                        }
                     }
                 } catch (Exception e) {
                     LOGGER.debug("Skipping unreadable packet while indexing the recording player's view", e);
@@ -94,12 +105,13 @@ public final class RecordedTracks {
             }
         }
 
-        LOGGER.info("Indexed recording player's view: {} HUD states, {} menu states, {} cursor samples",
-                hud.times.size(), screen.times.size(), cursorEntries.size());
+        LOGGER.info("Indexed recording player's view: {} HUD states, {} menu states, {} cursor samples, {} camera samples",
+                hud.times.size(), screen.times.size(), cursorEntries.size(), cameraTimes.size());
         return new RecordedTracks(
                 new PayloadTimeline<>(HUD_CODEC, hud.times, hud.payloads, HudStateCodec::isFull),
                 new PayloadTimeline<>(SCREEN_CODEC, screen.times, screen.payloads, ScreenStateCodec::isFull),
-                new CursorTrack(cursorEntries, cursorPositions));
+                new CursorTrack(cursorEntries, cursorPositions),
+                new CameraTrack(cameraTimes, cameraSamples));
     }
 
     private static byte[] readRest(PacketByteBuf buf) {

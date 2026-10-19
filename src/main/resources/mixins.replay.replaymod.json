@@ -62,7 +62,10 @@
     "Mixin_PlayerViewHud_Player",
     "HandledScreenAccessor",
     "ScreenHandlerAccessor",
-    "Mixin_MenuPlayerInventoryEntity"
+    "Mixin_MenuPlayerInventoryEntity",
+    "GameRendererFovInvoker",
+    "Mixin_PlayerViewCamera",
+    "Mixin_PlayerViewFov"
   ],
   "compatibilityLevel": "JAVA_8",
   "minVersion": "0.6.11"

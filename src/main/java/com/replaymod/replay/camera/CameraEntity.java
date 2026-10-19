@@ -9,6 +9,7 @@ import com.replaymod.core.events.PreRenderHandCallback;
 import com.replaymod.core.events.SettingsChangedCallback;
 import com.replaymod.replay.ReplayHandler;
 import com.replaymod.playerview.PlayerViewHud;
+import com.replaymod.playerview.CameraSample;
 import com.replaymod.replay.events.RenderHotbarCallback;
 import com.replaymod.replay.events.RenderSpectatorCrosshairCallback;
 import com.replaymod.replay.mixin.EntityPlayerAccessor;
@@ -555,6 +556,11 @@ public class CameraEntity
 
     @Override
     public float getAttackCooldownProgress(float adjustTicks) {
+        // The recording player's real cooldown, which other players' cooldowns never show (they reset locally)
+        CameraSample recorded = PlayerViewHud.cameraSample();
+        if (recorded != null) {
+            return recorded.attackCooldown;
+        }
         Entity view = this.client.getCameraEntity();
         if (view != this && view instanceof PlayerEntity) {
             return ((PlayerEntity) view).getAttackCooldownProgress(adjustTicks);

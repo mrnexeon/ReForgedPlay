@@ -7,18 +7,21 @@ import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 /**
- * Payload carriers for the menu ({@code replaymod:screen}) and cursor ({@code replaymod:cursor}) tracks.
+ * Payload carriers for the menu ({@code replaymod:screen}), cursor ({@code replaymod:cursor}) and camera
+ * ({@code replaymod:camera}) tracks.
  * Like {@link HudStatePayload}, they hold opaque bytes which are only ever written into replays by the recorder.
  */
 public final class PlayerViewPayloads {
     public static final Identifier SCREEN_CHANNEL = Identifier.of("replaymod", "screen");
     public static final Identifier CURSOR_CHANNEL = Identifier.of("replaymod", "cursor");
+    public static final Identifier CAMERA_CHANNEL = Identifier.of("replaymod", "camera");
 
     private PlayerViewPayloads() {}
 
     /** Whether a custom payload channel belongs to the recording player's view and must not reach the replay client. */
     public static boolean isPlayerViewChannel(Identifier channel) {
-        return HudStatePayload.CHANNEL.equals(channel) || SCREEN_CHANNEL.equals(channel) || CURSOR_CHANNEL.equals(channel);
+        return HudStatePayload.CHANNEL.equals(channel) || SCREEN_CHANNEL.equals(channel)
+                || CURSOR_CHANNEL.equals(channel) || CAMERA_CHANNEL.equals(channel);
     }
 
     private static byte[] readRest(PacketByteBuf buf) {
@@ -65,6 +68,19 @@ public final class PlayerViewPayloads {
             } finally {
                 buf.release();
             }
+        }
+    }
+
+    /** Carrier for one {@link CameraSample}. */
+    public record Camera(byte[] data) implements CustomPayload {
+        public static final CustomPayload.Id<Camera> ID = new CustomPayload.Id<>(CAMERA_CHANNEL);
+        public static final PacketCodec<? super PacketByteBuf, Camera> CODEC = PacketCodec.ofStatic(
+                (buf, payload) -> buf.writeBytes(payload.data()),
+                buf -> new Camera(readRest(buf)));
+
+        @Override
+        public Id<? extends CustomPayload> getId() {
+            return ID;
         }
     }
 }

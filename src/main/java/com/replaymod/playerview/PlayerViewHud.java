@@ -1,6 +1,7 @@
 package com.replaymod.playerview;
 
 import com.replaymod.core.events.PostRenderCallback;
+import com.replaymod.core.events.PreRenderCallback;
 import com.replaymod.replay.ReplayHandler;
 import com.replaymod.replay.ReplayModReplay;
 import com.replaymod.replay.camera.CameraEntity;
@@ -29,17 +30,21 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Shows the recording player's HUD (hotbar, hearts, armor, food, XP, air, effect icons) and their open menu with
- * cursor while the replay viewer spectates that player in first person.
+ * Makes first-person playback of the recording player look like their original gameplay.
  *
- * In 1.21.1 the HUD reads hotbar, health, armor, food and air from the spectated player, and XP and effect icons from
- * {@code client.player}, which in a replay is the {@link CameraEntity}. While the HUD is drawn this class therefore
+ * While the replay viewer spectates the recording player in first person, every frame:
  * <ul>
- *     <li>fills the spectated player's inventory, selected slot, health, absorption and air from the recording,</li>
- *     <li>exposes the recorded state via {@link #activeState()}: mixins use it to report the recorded armor, food and
- *     effects for both entities, and the recorded game mode instead of spectator,</li>
- *     <li>temporarily sets the camera's XP fields, restoring them right after.</li>
+ *     <li>the view follows the recorded camera exactly (position, rotation, field of view, view bobbing), see
+ *     {@link #cameraSample()} and the camera and field-of-view mixins;</li>
+ *     <li>nausea and portal swirl, freezing and the attack cooldown come from the recording;</li>
+ *     <li>the spectated player and the replay camera report the recorded effects, armor and food, so night vision,
+ *     darkness, hearts and the food bar look right;</li>
+ *     <li>the HUD (hotbar, hearts, armor, food, XP, air, effect icons) is drawn from the recording, with the recorded
+ *     game mode reported only while the HUD is drawn;</li>
+ *     <li>the open menu and the cursor are drawn after the HUD.</li>
  * </ul>
+ * In vanilla, some of these are read from the spectated player and some from {@code client.player}, which in a replay
+ * is the {@link CameraEntity}; this class covers both.
  */
 public class PlayerViewHud extends EventRegistrations {
     private static final Logger LOGGER = LogManager.getLogger();
@@ -53,16 +58,20 @@ public class PlayerViewHud extends EventRegistrations {
     private volatile RecordedTracks tracks;
     private final MenuPlayer menuPlayer = new MenuPlayer();
 
-    // Render-thread only state
-    private HudState active;
-    private CameraEntity activeCamera;
-    private PlayerEntity activeView;
+    // Per frame, render thread only. Set before the world is drawn; kept through the following ticks, which also
+    // read some of it (attack cooldown, effects), until the next frame recomputes it.
+    private PlayerEntity frameView;
+    private CameraEntity frameCamera;
+    private HudState frameState;
+    private int frameTime;
+    private CameraSample frameCameraSample;
+    /** The camera whose nausea and freezing we set, so they can be cleared when the view changes. */
+    private CameraEntity effectsCamera;
+
+    // Only while the HUD is drawn: the recorded game mode is reported and the camera's XP is swapped in
+    private HudState hudActive;
     private int savedXpLevel, savedTotalXp;
     private float savedXpProgress;
-
-    /** Set in RenderGuiEvent.Pre when the recording player is spectated in first person, for drawing their menu. */
-    private PlayerEntity menuView;
-    private int menuTime;
 
     private HudState appliedState;
     private Entity appliedEntity;
@@ -73,23 +82,41 @@ public class PlayerViewHud extends EventRegistrations {
     /** The recorded state while the HUD is being drawn for the recording player, otherwise {@code null}. */
     public static HudState activeState() {
         PlayerViewHud hud = instance;
-        return hud != null ? hud.active : null;
+        return hud != null ? hud.hudActive : null;
     }
 
-    /** Whether the HUD is being drawn for the recording player and the entity is one the HUD reads from. */
+    /** The recorded HUD state for this frame while the recording player is spectated in first person. */
+    public static HudState frameState() {
+        PlayerViewHud hud = instance;
+        return hud != null ? hud.frameState : null;
+    }
+
+    /** The recorded camera for this frame, or {@code null} to leave the view to the replay. */
+    public static CameraSample cameraSample() {
+        PlayerViewHud hud = instance;
+        return hud != null ? hud.frameCameraSample : null;
+    }
+
+    /** The spectated recording player this frame, or {@code null}. */
+    public static Entity viewedPlayer() {
+        PlayerViewHud hud = instance;
+        return hud != null ? hud.frameView : null;
+    }
+
+    /** Whether the entity is the spectated recording player or the replay camera while recorded state applies. */
     public static boolean isSubject(Object entity) {
         PlayerViewHud hud = instance;
-        return hud != null && hud.active != null && (entity == hud.activeView || entity == hud.activeCamera);
+        return hud != null && hud.frameState != null && (entity == hud.frameView || entity == hud.frameCamera);
     }
 
     public static HungerManager activeHungerManager() {
         PlayerViewHud hud = instance;
-        return hud != null && hud.active != null ? hud.derivedHunger : null;
+        return hud != null && hud.frameState != null ? hud.derivedHunger : null;
     }
 
     public static Collection<StatusEffectInstance> activeEffects() {
         PlayerViewHud hud = instance;
-        return hud != null && hud.active != null ? hud.derivedEffects : null;
+        return hud != null && hud.frameState != null ? hud.derivedEffects : null;
     }
 
     public static StatusEffectInstance activeEffect(RegistryEntry<StatusEffect> effect) {
@@ -133,37 +160,45 @@ public class PlayerViewHud extends EventRegistrations {
     private void onReplayClosed(ReplayHandler replayHandler) {
         indexToken = null;
         tracks = null;
-        restore();
-        menuView = null;
+        restoreHud();
+        clearFrame();
         menuPlayer.reset();
         appliedState = null;
         appliedEntity = null;
         derivedFor = null;
     }
 
-    // Safety net: never let the recorded state leak past the frame, e.g. if another mod cancels the HUD.
-    { on(PostRenderCallback.EVENT, this::restore); }
+    { on(PreRenderCallback.EVENT, this::onPreRender); }
+    private void onPreRender() {
+        restoreHud();
+        PlayerEntity previousView = frameView;
+        computeFrame();
+        if (frameView == null && previousView != null) {
+            menuPlayer.reset();
+        }
+    }
 
-    private void onRenderGuiPre(RenderGuiEvent.Pre event) {
-        restore();
-        menuView = null;
+    // Safety net: never let the recorded game mode or XP leak past the frame, e.g. if another mod cancels the HUD.
+    { on(PostRenderCallback.EVENT, this::restoreHud); }
 
+    private void computeFrame() {
         ReplayHandler replayHandler = ReplayModReplay.instance.getReplayHandler();
         RecordedTracks tracks = this.tracks;
-        if (replayHandler == null || tracks == null || mc.world == null) return;
-
-        CameraEntity camera = replayHandler.getCameraEntity();
+        CameraEntity camera = replayHandler != null ? replayHandler.getCameraEntity() : null;
         Entity view = mc.getCameraEntity();
-        if (camera == null || !(view instanceof PlayerEntity) || view == camera) return;
-        if (!mc.options.getPerspective().isFirstPerson()) return;
+        if (replayHandler == null || tracks == null || mc.world == null || camera == null
+                || !(view instanceof PlayerEntity) || view == camera
+                || !mc.options.getPerspective().isFirstPerson()) {
+            clearFrame();
+            return;
+        }
 
         int time = replayHandler.getReplaySender().currentTimeStamp();
         HudState state = tracks.hud.at(time, mc.world.getRegistryManager());
-        if (state == null || state.entityId == HudState.UNKNOWN_ENTITY || state.entityId != view.getId()) return;
-
-        // This is the recording player: their menu is drawn after the HUD, in RenderGuiEvent.Post
-        menuView = (PlayerEntity) view;
-        menuTime = time;
+        if (state == null || state.entityId == HudState.UNKNOWN_ENTITY || state.entityId != view.getId()) {
+            clearFrame(); // spectating someone else
+            return;
+        }
 
         PlayerEntity player = (PlayerEntity) view;
         if (state != appliedState || view != appliedEntity) {
@@ -176,46 +211,96 @@ public class PlayerViewHud extends EventRegistrations {
             derivedFor = state;
         }
 
+        CameraSample sample = tracks.camera.sample(time);
+        if (sample != null && !sample.isFirstPerson()) sample = null; // recorded in third person: leave the view
+        if (sample != null) {
+            applyCameraEffects(player, camera, sample);
+        } else {
+            clearCameraEffects();
+        }
+
+        frameView = player;
+        frameCamera = camera;
+        frameState = state;
+        frameTime = time;
+        frameCameraSample = sample;
+    }
+
+    private void clearFrame() {
+        clearCameraEffects();
+        frameView = null;
+        frameCamera = null;
+        frameState = null;
+        frameCameraSample = null;
+    }
+
+    /**
+     * View bobbing is computed from the spectated player, nausea and freezing from {@code client.player} (the camera).
+     * Both are reset from the recording every frame, after the entities ticked.
+     */
+    private void applyCameraEffects(PlayerEntity player, CameraEntity camera, CameraSample sample) {
+        player.horizontalSpeed = -sample.bobPhase;
+        player.prevHorizontalSpeed = -sample.bobPhase;
+        player.strideDistance = sample.bobAmount;
+        player.prevStrideDistance = sample.bobAmount;
+
+        if (effectsCamera != null && effectsCamera != camera) clearCameraEffects();
+        camera.nauseaIntensity = sample.nausea;
+        camera.prevNauseaIntensity = sample.nausea;
+        camera.setFrozenTicks(sample.frozenTicks);
+        effectsCamera = camera;
+    }
+
+    private void clearCameraEffects() {
+        CameraEntity camera = effectsCamera;
+        if (camera == null) return;
+        camera.nauseaIntensity = 0;
+        camera.prevNauseaIntensity = 0;
+        camera.setFrozenTicks(0);
+        effectsCamera = null;
+    }
+
+    private void onRenderGuiPre(RenderGuiEvent.Pre event) {
+        restoreHud();
+        HudState state = frameState;
+        CameraEntity camera = frameCamera;
+        if (state == null || camera == null) return;
+
         savedXpLevel = camera.experienceLevel;
         savedXpProgress = camera.experienceProgress;
         savedTotalXp = camera.totalExperience;
         camera.experienceLevel = state.xpLevel;
         camera.experienceProgress = state.xpProgress;
         camera.totalExperience = state.totalXp;
-
-        activeCamera = camera;
-        activeView = player;
-        active = state;
+        hudActive = state;
     }
 
     private void onRenderGuiPost(RenderGuiEvent.Post event) {
         // Restore first: the menu must see the replay's real game mode (the inventory screen would otherwise switch
         // to the creative inventory for players recorded in creative mode).
-        restore();
+        restoreHud();
 
-        PlayerEntity view = menuView;
-        menuView = null;
+        PlayerEntity view = frameView;
         RecordedTracks tracks = this.tracks;
         if (view == null || tracks == null || mc.world == null) {
             menuPlayer.reset();
             return;
         }
-        ScreenState screen = tracks.screen.at(menuTime, mc.world.getRegistryManager());
+        ScreenState screen = tracks.screen.at(frameTime, mc.world.getRegistryManager());
         float tickDelta = event.getPartialTick().getTickDelta(false);
-        // Interpolate the cursor within the current tick for smooth movement, including in slow motion
-        CursorTrack.Sample cursor = tracks.cursor.sample(menuTime);
+        CursorTrack.Sample cursor = tracks.cursor.sample(frameTime);
         menuPlayer.render(event.getGuiGraphics(), screen, cursor, tickDelta, view);
     }
 
-    private void restore() {
-        if (active == null) return;
-        CameraEntity camera = activeCamera;
-        camera.experienceLevel = savedXpLevel;
-        camera.experienceProgress = savedXpProgress;
-        camera.totalExperience = savedTotalXp;
-        active = null;
-        activeCamera = null;
-        activeView = null;
+    private void restoreHud() {
+        if (hudActive == null) return;
+        CameraEntity camera = frameCamera;
+        if (camera != null) {
+            camera.experienceLevel = savedXpLevel;
+            camera.experienceProgress = savedXpProgress;
+            camera.totalExperience = savedTotalXp;
+        }
+        hudActive = null;
     }
 
     /**

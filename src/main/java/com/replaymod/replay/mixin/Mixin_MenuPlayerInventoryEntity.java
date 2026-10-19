@@ -16,7 +16,8 @@ public abstract class Mixin_MenuPlayerInventoryEntity {
     @ModifyArg(
             method = "drawBackground",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screen/ingame/InventoryScreen;drawEntity(Lnet/minecraft/client/gui/DrawContext;IIIIIFFFLnet/minecraft/entity/LivingEntity;)V"),
-            index = 9
+            index = 9,
+            require = 0 // cosmetic: if this ever stops matching, the menu still works
     )
     private LivingEntity replayModPlayerView_drawRecordingPlayer(LivingEntity entity) {
         LivingEntity override = MenuPlayer.drawingFor();

@@ -469,6 +469,26 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
 
     }
 
+    private static Integer customPayloadPacketId;
+
+    /** Whether this is a {@code replaymod:hud_state} payload, which PlayerViewHud reads from the replay file itself. */
+    private static boolean isHudStatePacket(NetworkState state, int packetId, PacketByteBuf pb) {
+        if (state != NetworkState.PLAY) return false;
+        if (customPayloadPacketId == null) {
+            customPayloadPacketId = state.getHandler(NetworkSide.CLIENTBOUND)
+                    .getId(new CustomPayloadS2CPacket(new HudStatePayload(new byte[0])));
+        }
+        if (packetId != customPayloadPacketId) return false;
+        int readerIndex = pb.readerIndex();
+        try {
+            return HudStatePayload.ID.equals(pb.readIdentifier());
+        } catch (Exception e) {
+            return false;
+        } finally {
+            pb.readerIndex(readerIndex);
+        }
+    }
+
     private Packet deserializePacket(byte[] bytes, ChannelHandlerContext ctx) throws IOException, IllegalAccessException, InstantiationException {
         ByteBuf bb = Unpooled.wrappedBuffer(bytes);
         PacketByteBuf pb = new PacketByteBuf(bb);
@@ -476,6 +496,10 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
         int i = pb.readVarInt();
 
         NetworkState state = asMc(registry.getState());
+        if (isHudStatePacket(state, i, pb)) {
+            // Skip before decoding: NeoForge would log a warning for every one of these unknown payloads.
+            return null;
+        }
         //#if MC>=12002
         Packet p = state.getHandler(NetworkSide.CLIENTBOUND).createPacket(i, pb, ctx);
         //#elseif MC>=11700

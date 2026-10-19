@@ -18,6 +18,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.util.math.Vec3d;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.apache.logging.log4j.LogManager;
@@ -186,8 +187,9 @@ public class PlayerViewHud extends EventRegistrations {
         RecordedTracks tracks = this.tracks;
         CameraEntity camera = replayHandler != null ? replayHandler.getCameraEntity() : null;
         Entity view = mc.getCameraEntity();
+        boolean pov = PovMode.isActive();
         if (replayHandler == null || tracks == null || mc.world == null || camera == null
-                || !(view instanceof PlayerEntity) || view == camera
+                || !(view instanceof PlayerEntity) || (view == camera && !pov)
                 || !mc.options.getPerspective().isFirstPerson()) {
             clearFrame();
             return;
@@ -211,9 +213,15 @@ public class PlayerViewHud extends EventRegistrations {
             derivedFor = state;
         }
 
+        if (pov && state.selectedSlot >= 0 && state.selectedSlot < PlayerInventory.getHotbarSize()) {
+            // Every frame, so nothing the viewer does (scroll wheel) can change the recorded slot
+            player.getInventory().selectedSlot = state.selectedSlot;
+        }
+
         CameraSample sample = tracks.camera.sample(time);
         if (sample != null && !sample.isFirstPerson()) sample = null; // recorded in third person: leave the view
         if (sample != null) {
+            if (pov) placePovPlayer(camera, sample);
             applyCameraEffects(player, camera, sample);
         } else {
             clearCameraEffects();
@@ -224,6 +232,24 @@ public class PlayerViewHud extends EventRegistrations {
         frameState = state;
         frameTime = time;
         frameCameraSample = sample;
+    }
+
+    /**
+     * In POV mode the local player is the recording player; put it exactly where their camera was, after the tick,
+     * so the hand, overlays (water, fire, suffocation), sounds and block outline all line up.
+     */
+    private static void placePovPlayer(CameraEntity player, CameraSample sample) {
+        double feetY = sample.y - player.getStandingEyeHeight();
+        player.setPosition(sample.x, feetY, sample.z);
+        player.prevX = player.lastRenderX = sample.x;
+        player.prevY = player.lastRenderY = feetY;
+        player.prevZ = player.lastRenderZ = sample.z;
+        player.setYaw(sample.yaw);
+        player.setPitch(sample.pitch);
+        player.prevYaw = sample.yaw;
+        player.prevPitch = sample.pitch;
+        player.setHeadYaw(sample.yaw);
+        player.setVelocity(Vec3d.ZERO);
     }
 
     private void clearFrame() {

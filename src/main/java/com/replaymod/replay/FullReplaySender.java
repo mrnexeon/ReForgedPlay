@@ -16,6 +16,12 @@ import com.replaymod.replaystudio.protocol.PacketType;
 import com.replaymod.replaystudio.protocol.PacketTypeRegistry;
 import com.replaymod.replaystudio.replay.ReplayFile;
 import com.replaymod.playerview.PlayerViewPayloads;
+import com.replaymod.playerview.PovMode;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
+import net.minecraft.network.packet.s2c.play.DeathMessageS2CPacket;
+import net.minecraft.network.packet.s2c.play.EntitiesDestroyS2CPacket;
+import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket;
 import de.johni0702.minecraft.gui.utils.EventRegistrations;
 import de.johni0702.minecraft.gui.versions.callbacks.PreTickCallback;
 import io.netty.buffer.ByteBuf;
@@ -166,6 +172,23 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
             StatisticsS2CPacket.class,
             ExperienceBarUpdateS2CPacket.class,
             PlayerAbilitiesS2CPacket.class
+    );
+
+    /**
+     * In POV mode the local player is the recording player, so packets meant for them are delivered (health, XP,
+     * inventory, abilities, titles, advancements, ...). Only packets that would open a screen or move the view to
+     * another entity are still dropped; recorded menus are drawn by the player view instead.
+     */
+    private static final List<Class> POV_BAD_PACKETS = Arrays.<Class>asList(
+            OpenWrittenBookS2CPacket.class,
+            OpenScreenS2CPacket.class,
+            SelectAdvancementTabS2CPacket.class,
+            SetCameraEntityS2CPacket.class,
+            OpenHorseScreenS2CPacket.class,
+            CloseScreenS2CPacket.class,
+            SignEditorOpenS2CPacket.class,
+            StatisticsS2CPacket.class,
+            DeathMessageS2CPacket.class // would open the death screen
     );
 
     private static int TP_DISTANCE_LIMIT = 128;
@@ -591,7 +614,21 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
             }
         }
 
-        if(BAD_PACKETS.contains(p.getClass())) return null;
+        if((PovMode.isEnabled() ? POV_BAD_PACKETS : BAD_PACKETS).contains(p.getClass())) return null;
+
+        if (PovMode.isEnabled() && actualID != -1) {
+            // The local player is the recording player, so the separate entity the recorder spawned for them must
+            // not be created (it would replace the local player in the world) or removed
+            if (p instanceof EntitySpawnS2CPacket && ((EntitySpawnS2CPacket) p).getEntityId() == actualID) {
+                return null;
+            }
+            if (p instanceof EntitiesDestroyS2CPacket && ((EntitiesDestroyS2CPacket) p).getEntityIds().contains(actualID)) {
+                IntList rest = new IntArrayList(((EntitiesDestroyS2CPacket) p).getEntityIds());
+                rest.rem(actualID);
+                if (rest.isEmpty()) return null;
+                p = new EntitiesDestroyS2CPacket(rest);
+            }
+        }
 
         if (p instanceof CustomPayloadS2CPacket) {
             CustomPayloadS2CPacket packet = (CustomPayloadS2CPacket) p;
@@ -668,7 +705,8 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
             actualID = entId;
             entId = -1789435; // Camera entity id should be negative which is an invalid id and can't be used by servers
             //#if MC>=11400
-            p = new GameJoinS2CPacket(
+            // In POV mode the local player is the recording player: keep their entity id and game mode
+            if (!PovMode.isEnabled()) p = new GameJoinS2CPacket(
                     entId,
                     //#if MC>=12002
                     packet.hardcore(),
@@ -779,7 +817,7 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
         if(p instanceof PlayerRespawnS2CPacket) {
             PlayerRespawnS2CPacket respawn = (PlayerRespawnS2CPacket) p;
             //#if MC>=11400
-            p = new PlayerRespawnS2CPacket(
+            if (!PovMode.isEnabled()) p = new PlayerRespawnS2CPacket(
                     //#if MC>=12002
                     withSpectatorMode(respawn.commonPlayerSpawnInfo()),
                     (byte) 0
@@ -896,6 +934,14 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
 
         if(p instanceof GameStateChangeS2CPacket) {
             GameStateChangeS2CPacket pg = (GameStateChangeS2CPacket)p;
+            if (PovMode.isEnabled()) {
+                // The recording player's client got all of these (game mode, arrow hits, elder guardian, ...);
+                // only skip the ones that would open a screen
+                if (pg.getReason() == GameStateChangeS2CPacket.GAME_WON
+                        || pg.getReason() == GameStateChangeS2CPacket.DEMO_MESSAGE_SHOWN) {
+                    return null;
+                }
+            } else
             // only allow the following packets:
             // 1 - End raining
             // 2 - Begin raining
@@ -1167,6 +1213,16 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
      * @param millis Timestamp in milliseconds since the start of the replay
      */
     @Override
+    /**
+     * Replays everything from the start up to the given time, rebuilding the world and the local player.
+     * Used to switch between free camera and first-person POV mode, which set up the player differently.
+     */
+    public void restartAt(int millis) {
+        Preconditions.checkState(asyncMode, "Can only restart in async mode.");
+        startFromBeginning = true;
+        desiredTimeStamp = millis;
+    }
+
     public void jumpToTime(int millis) {
         Preconditions.checkState(asyncMode, "Can only jump in async mode. Use sendPacketsTill(int) instead.");
         if(millis < lastTimeStamp && !isHurrying()) {

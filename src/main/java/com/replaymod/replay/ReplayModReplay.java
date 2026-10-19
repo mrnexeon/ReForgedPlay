@@ -15,6 +15,7 @@ import com.replaymod.replay.camera.CameraController;
 import com.replaymod.replay.camera.CameraControllerRegistry;
 import com.replaymod.replay.camera.CameraEntity;
 import com.replaymod.playerview.PlayerViewHud;
+import com.replaymod.playerview.PovMode;
 import com.replaymod.replay.camera.ClassicCameraController;
 import com.replaymod.replay.camera.VanillaCameraController;
 import com.replaymod.replay.gui.screen.GuiModCompatWarning;
@@ -76,6 +77,16 @@ public class ReplayModReplay implements Module {
                         replayHandler.getOverlay().timeline.addMarker(marker);
                     }
                 }
+            }
+        }, true);
+
+        registry.registerKeyBinding("replaymod.input.povmode", Keyboard.KEY_U, () -> {
+            if (replayHandler == null) return;
+            String problem = PovMode.toggle();
+            if (problem != null) {
+                core.printWarningToChat("replaymod.chat.povmode.failed", problem);
+            } else {
+                core.printInfoToChat(PovMode.isEnabled() ? "replaymod.chat.povmode.on" : "replaymod.chat.povmode.off");
             }
         }, true);
 

@@ -9,6 +9,10 @@ import com.replaymod.core.events.PreRenderHandCallback;
 import com.replaymod.core.events.SettingsChangedCallback;
 import com.replaymod.replay.ReplayHandler;
 import com.replaymod.playerview.PlayerViewHud;
+import com.replaymod.playerview.PovMode;
+import net.minecraft.client.input.Input;
+import net.minecraft.entity.data.TrackedData;
+import net.minecraft.world.GameMode;
 import com.replaymod.playerview.CameraSample;
 import com.replaymod.replay.events.RenderHotbarCallback;
 import com.replaymod.replay.events.RenderSpectatorCrosshairCallback;
@@ -300,6 +304,16 @@ public class CameraEntity
 
     @Override
     public void tick() {
+        if (PovMode.isActive()) {
+            // We are the recording player: run the normal player tick (hurt shake, hand swing, item use, nausea,
+            // freezing, ...) but never with the viewer's movement input. Position and rotation come from the
+            // recording every frame (see PlayerViewHud).
+            if (this.input == null || this.input.getClass() != Input.class) {
+                this.input = new Input();
+            }
+            super.tick();
+            return;
+        }
         //#if MC>=10800
         Entity view =
         //#else
@@ -359,6 +373,7 @@ public class CameraEntity
 
     @Override
     public boolean isInsideWall() {
+        if (PovMode.isActive()) return super.isInsideWall();
         return falseUnlessSpectating(Entity::isInsideWall); // Make sure no suffocation overlay is rendered
     }
 
@@ -378,11 +393,13 @@ public class CameraEntity
             //$$ Tag<Fluid> fluid
             //#endif
     ) {
+        if (PovMode.isActive()) return super.isSubmergedIn(fluid);
         return falseUnlessSpectating(entity -> entity.isSubmergedIn(fluid));
     }
 
     @Override
     public float getUnderwaterVisibility() {
+        if (PovMode.isActive()) return super.getUnderwaterVisibility();
         return falseUnlessSpectating(__ -> true) ? super.getUnderwaterVisibility() : 1f;
     }
     //#else
@@ -406,6 +423,7 @@ public class CameraEntity
 
     @Override
     public boolean isOnFire() {
+        if (PovMode.isActive()) return super.isOnFire();
         return falseUnlessSpectating(Entity::isOnFire); // Make sure no fire overlay is rendered
     }
 
@@ -418,6 +436,21 @@ public class CameraEntity
     }
 
     @Override
+    public void onTrackedDataSet(TrackedData<?> data) {
+        super.onTrackedDataSet(data);
+        if (PovMode.isActive() && LIVING_FLAGS.equals(data)) {
+            byte flags = this.dataTracker.get(LIVING_FLAGS);
+            boolean using = (flags & 1) != 0;
+            Hand hand = (flags & 2) != 0 ? Hand.OFF_HAND : Hand.MAIN_HAND;
+            if (using && !super.isUsingItem()) {
+                this.setCurrentHand(hand);
+            } else if (!using && super.isUsingItem()) {
+                this.clearActiveItem();
+            }
+        }
+    }
+
+    @Override
     public boolean isPushable() {
         return false; // We are in full control of ourselves
     }
@@ -425,6 +458,10 @@ public class CameraEntity
     //#if MC>=10800
     @Override
     protected void spawnSprintingParticles() {
+        if (PovMode.isActive()) {
+            super.spawnSprintingParticles();
+            return;
+        }
         // We do not produce any particles, we are a camera
     }
     //#endif
@@ -437,6 +474,11 @@ public class CameraEntity
     //#if MC>=10800
     @Override
     public boolean isSpectator() {
+        if (PovMode.isActive()) {
+            // Our UUID is the camera's, so ask the game mode the recording player had
+            return this.client.interactionManager != null
+                    && this.client.interactionManager.getCurrentGameMode() == GameMode.SPECTATOR;
+        }
         ReplayHandler replayHandler = ReplayModReplay.instance.getReplayHandler();
         return replayHandler == null || replayHandler.isCameraView(); // Make sure we're treated as spectator
     }
@@ -460,6 +502,7 @@ public class CameraEntity
     //#if MC>=10800
     @Override
     public float getFovMultiplier() {
+        if (PovMode.isActive()) return super.getFovMultiplier();
         Entity view = this.client.getCameraEntity();
         if (view != this && view instanceof AbstractClientPlayerEntity) {
             return ((AbstractClientPlayerEntity) view).getFovMultiplier();
@@ -475,6 +518,7 @@ public class CameraEntity
 
     @Override
     public boolean isInvisible() {
+        if (PovMode.isActive()) return super.isInvisible();
         Entity view = this.client.getCameraEntity();
         if (view != this) {
             return view.isInvisible();
@@ -516,6 +560,7 @@ public class CameraEntity
     //#if MC>=10800
     @Override
     public boolean isPartVisible(PlayerModelPart modelPart) {
+        if (PovMode.isActive()) return super.isPartVisible(modelPart);
         Entity view = this.client.getCameraEntity();
         if (view != this && view instanceof PlayerEntity) {
             return ((PlayerEntity) view).isPartVisible(modelPart);
@@ -527,6 +572,7 @@ public class CameraEntity
     //#if MC>=10904
     @Override
     public Arm getMainArm() {
+        if (PovMode.isActive()) return super.getMainArm();
         Entity view = this.client.getCameraEntity();
         if (view != this && view instanceof PlayerEntity) {
             return ((PlayerEntity) view).getMainArm();
@@ -537,6 +583,7 @@ public class CameraEntity
 
     @Override
     public float getHandSwingProgress(float renderPartialTicks) {
+        if (PovMode.isActive()) return super.getHandSwingProgress(renderPartialTicks);
         Entity view = this.client.getCameraEntity();
         if (view != this && view instanceof PlayerEntity) {
             return ((PlayerEntity) view).getHandSwingProgress(renderPartialTicks);
@@ -547,6 +594,7 @@ public class CameraEntity
     //#if MC>=10904
     @Override
     public float getAttackCooldownProgressPerTick() {
+        if (PovMode.isActive()) return super.getAttackCooldownProgressPerTick();
         Entity view = this.client.getCameraEntity();
         if (view != this && view instanceof PlayerEntity) {
             return ((PlayerEntity) view).getAttackCooldownProgressPerTick();
@@ -561,6 +609,7 @@ public class CameraEntity
         if (recorded != null) {
             return recorded.attackCooldown;
         }
+        if (PovMode.isActive()) return super.getAttackCooldownProgress(adjustTicks);
         Entity view = this.client.getCameraEntity();
         if (view != this && view instanceof PlayerEntity) {
             return ((PlayerEntity) view).getAttackCooldownProgress(adjustTicks);
@@ -571,6 +620,7 @@ public class CameraEntity
 
     @Override
     public Hand getActiveHand() {
+        if (PovMode.isActive()) return super.getActiveHand();
         Entity view = this.client.getCameraEntity();
         if (view != this && view instanceof PlayerEntity) {
             return ((PlayerEntity) view).getActiveHand();
@@ -580,6 +630,7 @@ public class CameraEntity
 
     @Override
     public boolean isUsingItem() {
+        if (PovMode.isActive()) return super.isUsingItem();
         Entity view = this.client.getCameraEntity();
         if (view != this && view instanceof PlayerEntity) {
             return ((PlayerEntity) view).isUsingItem();
@@ -602,6 +653,7 @@ public class CameraEntity
     @Override
     public HitResult raycast(double maxDistance, float tickDelta, boolean fluids) {
         HitResult result = super.raycast(maxDistance, tickDelta, fluids);
+        if (PovMode.isActive()) return result; // the recording player saw block outlines
 
         // Make sure we can never look at blocks (-> no outline)
         if (result instanceof BlockHitResult) {
@@ -675,6 +727,7 @@ public class CameraEntity
     }
 
     private void update() {
+        if (PovMode.isActive()) return; // no free camera controls, spectating or inventory mirroring in POV mode
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc.world != this.getWorld()) {
             if (eventHandler != null) {

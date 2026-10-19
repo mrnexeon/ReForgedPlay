@@ -65,7 +65,9 @@
     "Mixin_MenuPlayerInventoryEntity",
     "GameRendererFovInvoker",
     "Mixin_PlayerViewCamera",
-    "Mixin_PlayerViewFov"
+    "Mixin_PlayerViewFov",
+    "Mixin_PovBlockGameplayInput",
+    "Mixin_PovSilenceLocalSounds"
   ],
   "compatibilityLevel": "JAVA_8",
   "minVersion": "0.6.11"

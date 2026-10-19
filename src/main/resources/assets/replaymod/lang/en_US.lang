@@ -344,3 +344,7 @@ replaymod.gui.advancedscreenshots.finished.description.360=You successfully crea
 replaymod.gui.advancedscreenshots.finished.description.veer=Upload and view the image in VR on VeeR.tv or open it on your disk.
 replaymod.gui.advancedscreenshots.finished.upload.veer=Upload to VeeR.tv
 replaymod.gui.advancedscreenshots.finished.showfile=Show file on disk
+replaymod.input.povmode=Toggle First-Person POV Mode
+replaymod.chat.povmode.on=First-person POV mode: watching as the recording player
+replaymod.chat.povmode.off=Free camera mode
+replaymod.chat.povmode.failed=Cannot switch POV mode: %s

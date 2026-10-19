@@ -515,6 +515,12 @@ public class ReplayHandler {
         moveCameraToTargetPosition();
     }
 
+    /** Replays from the start up to the current time, e.g. to switch between free camera and POV mode. */
+    public void restartAtCurrentTime() {
+        mc.setScreen(null);
+        fullReplaySender.restartAt(fullReplaySender.currentTimeStamp());
+    }
+
     public boolean isQuickMode() {
         return quickMode;
     }

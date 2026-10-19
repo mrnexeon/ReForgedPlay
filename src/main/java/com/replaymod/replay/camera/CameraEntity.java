@@ -26,6 +26,12 @@ import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.decoration.ItemFrameEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
+import com.replaymod.playerview.HudState;
+import com.replaymod.playerview.PlayerViewHud;
+import net.minecraft.entity.effect.StatusEffect;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.player.HungerManager;
+import java.util.Collection;
 import net.minecraft.item.ItemStack;
 import net.minecraft.stat.StatHandler;
 import net.minecraft.util.Identifier;
@@ -439,6 +445,43 @@ public class CameraEntity
     }
     //#endif
 
+    // While the recording player's HUD is drawn, the HUD reads armor, food and effects from client.player, which is
+    // this camera. Report the recorded values instead (see PlayerViewHud).
+
+    @Override
+    public int getArmor() {
+        HudState state = PlayerViewHud.activeState();
+        return state != null ? state.armor : super.getArmor();
+    }
+
+    @Override
+    public HungerManager getHungerManager() {
+        HungerManager recorded = PlayerViewHud.activeHungerManager();
+        return recorded != null ? recorded : super.getHungerManager();
+    }
+
+    @Override
+    public Collection<StatusEffectInstance> getStatusEffects() {
+        Collection<StatusEffectInstance> recorded = PlayerViewHud.activeEffects();
+        return recorded != null ? recorded : super.getStatusEffects();
+    }
+
+    @Override
+    public boolean hasStatusEffect(StatusEffect effect) {
+        if (PlayerViewHud.activeState() != null) {
+            return PlayerViewHud.activeEffect(effect) != null;
+        }
+        return super.hasStatusEffect(effect);
+    }
+
+    @Override
+    public StatusEffectInstance getStatusEffect(StatusEffect effect) {
+        if (PlayerViewHud.activeState() != null) {
+            return PlayerViewHud.activeEffect(effect);
+        }
+        return super.getStatusEffect(effect);
+    }
+
     //#if MC>=11400
     @Override
     public boolean shouldRender(double double_1, double double_2, double double_3) {
@@ -837,7 +880,8 @@ public class CameraEntity
 
         { on(RenderHotbarCallback.EVENT, this::shouldRenderHotbar); }
         private Boolean shouldRenderHotbar() {
-            return false;
+            // Show the recording player's hotbar when spectating them in first person, otherwise hide it
+            return PlayerViewHud.activeState() != null ? null : false;
         }
 
         { on(SettingsChangedCallback.EVENT, this::onSettingsChanged); }

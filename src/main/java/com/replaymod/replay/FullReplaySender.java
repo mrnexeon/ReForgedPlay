@@ -13,6 +13,7 @@ import com.replaymod.replaystudio.io.ReplayInputStream;
 import com.replaymod.replaystudio.lib.viaversion.api.protocol.packet.State;
 import com.replaymod.replaystudio.protocol.PacketTypeRegistry;
 import com.replaymod.replaystudio.replay.ReplayFile;
+import com.replaymod.playerview.HudStatePayload;
 import de.johni0702.minecraft.gui.utils.EventRegistrations;
 import de.johni0702.minecraft.gui.versions.callbacks.PreTickCallback;
 import io.netty.buffer.ByteBuf;
@@ -630,6 +631,10 @@ public class FullReplaySender extends ChannelDuplexHandler implements ReplaySend
             //$$ String channelName = packet.getChannelName();
             //#endif
             String channelNameStr = channelName.toString();
+
+            if (channelNameStr.equals(HudStatePayload.ID.toString())) {
+                return null; // recording player's HUD state, read from the replay file by PlayerViewHud instead
+            }
 
             if (channelNameStr.startsWith("fabric-screen-handler-api-v")) {
                 return null; // we do not want to show modded screens which got opened for the recording player

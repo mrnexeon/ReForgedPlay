@@ -44,7 +44,9 @@
     //#endif
     "MixinRenderGlobal",
 
-    "Mixin_NeoSync"
+    "Mixin_NeoSync",
+    "Mixin_RecordLocalPlayerSounds",
+    "Mixin_SkipServerSoundRecording"
   ],
   "compatibilityLevel": "JAVA_8",
   "minVersion": "0.6.11"

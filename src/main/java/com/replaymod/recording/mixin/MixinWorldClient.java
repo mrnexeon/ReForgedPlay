@@ -2,6 +2,7 @@ package com.replaymod.recording.mixin;
 
 //#if MC>=10904
 import com.replaymod.recording.handler.RecordingEventHandler;
+import com.replaymod.recording.handler.ServerSoundGuard;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerEntity;
@@ -80,7 +81,7 @@ public abstract class MixinWorldClient extends World implements RecordingEventHa
             long seed,
             //#endif
             CallbackInfo ci) {
-        if (player == this.client.player) {
+        if (player == this.client.player && !ServerSoundGuard.isHandlingServerSound()) {
             RecordingEventHandler handler = replayModRecording_getRecordingEventHandler();
             if (handler != null) {
                 // Sent to all other players in ServerWorldEventHandler#playSoundToAllNearExcept

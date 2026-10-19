@@ -35,6 +35,7 @@ import net.minecraft.network.NetworkState;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.network.packet.s2c.common.CustomPayloadS2CPacket;
+import net.minecraft.network.packet.s2c.play.PlaySoundS2CPacket;
 import net.minecraft.network.packet.s2c.common.DisconnectS2CPacket;
 import net.minecraft.network.packet.s2c.common.ResourcePackSendS2CPacket;
 import net.minecraft.network.packet.s2c.config.ReadyS2CPacket;
@@ -508,6 +509,16 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
         //#endif
     }
 
+    private Packet previousPacket;
+
+    private static boolean isSameSound(PlaySoundS2CPacket a, PlaySoundS2CPacket b) {
+        return a.getSeed() == b.getSeed()
+                && a.getX() == b.getX() && a.getY() == b.getY() && a.getZ() == b.getZ()
+                && a.getVolume() == b.getVolume() && a.getPitch() == b.getPitch()
+                && a.getCategory() == b.getCategory()
+                && a.getSound().equals(b.getSound());
+    }
+
     /**
      * Process a packet and return the result.
      * @param p The packet to process
@@ -529,6 +540,16 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
             return p;
         }
         //#endif
+
+        Packet previous = previousPacket;
+        previousPacket = p;
+        if (p instanceof PlaySoundS2CPacket && previous instanceof PlaySoundS2CPacket
+                && isSameSound((PlaySoundS2CPacket) previous, (PlaySoundS2CPacket) p)) {
+            // Recordings made before the recorder fix contain every server sound twice in a row (once from the
+            // server, once re-recorded as a client sound), which played them at double volume. Drop the repeat;
+            // two distinct sounds never share the same random seed.
+            return null;
+        }
 
         if (p instanceof CustomPayloadS2CPacket) {
             CustomPayloadS2CPacket packet = (CustomPayloadS2CPacket) p;

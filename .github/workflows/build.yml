@@ -18,12 +18,38 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Build with Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-        with:
-          arguments: build
+
+      - name: Build with Gradle
+        shell: bash
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew build --stacktrace 2>&1 | tee build.log
+
+      # Raw job logs are not always reachable, so failures are also published as
+      # annotations, which can be read through the check-runs API.
+      - name: Report build errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          {
+            grep -n -E "error:|warning: \[|FAILURE:|What went wrong|Could not|Caused by:|> " build.log | head -n 150
+            echo "----- tail -----"
+            tail -n 60 build.log
+          } > errors.txt
+          python3 - <<'EOF'
+          text = open("errors.txt", encoding="utf-8", errors="replace").read()
+          chunks = [text[i:i + 3500] for i in range(0, len(text), 3500)][:9]
+          def esc(s):
+              return s.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          for n, chunk in enumerate(chunks, 1):
+              print(f"::error title=Gradle build part {n}/{len(chunks)}::{esc(chunk)}")
+          EOF
 
       - name: Upload build artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Package

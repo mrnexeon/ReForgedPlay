@@ -619,7 +619,7 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
         if (PovMode.isEnabled() && actualID != -1) {
             // The local player is the recording player, so the separate entity the recorder spawned for them must
             // not be created (it would replace the local player in the world) or removed
-            if (p instanceof EntitySpawnS2CPacket && ((EntitySpawnS2CPacket) p).getEntityId() == actualID) {
+            if (p instanceof EntitySpawnS2CPacket && ((EntitySpawnS2CPacket) p).getId() == actualID) {
                 return null;
             }
             if (p instanceof EntitiesDestroyS2CPacket && ((EntitiesDestroyS2CPacket) p).getEntityIds().contains(actualID)) {
@@ -1207,13 +1207,6 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
     }
 
     /**
-     * Jumps to the specified timestamp when in async mode by rushing all packets until one with a timestamp greater
-     * than the specified timestamp is found.
-     * If the timestamp has already passed, this causes the replay to restart and then rush all packets.
-     * @param millis Timestamp in milliseconds since the start of the replay
-     */
-    @Override
-    /**
      * Replays everything from the start up to the given time, rebuilding the world and the local player.
      * Used to switch between free camera and first-person POV mode, which set up the player differently.
      */
@@ -1223,6 +1216,13 @@ public class FullReplaySender extends ChannelInboundHandlerAdapter implements Re
         desiredTimeStamp = millis;
     }
 
+    /**
+     * Jumps to the specified timestamp when in async mode by rushing all packets until one with a timestamp greater
+     * than the specified timestamp is found.
+     * If the timestamp has already passed, this causes the replay to restart and then rush all packets.
+     * @param millis Timestamp in milliseconds since the start of the replay
+     */
+    @Override
     public void jumpToTime(int millis) {
         Preconditions.checkState(asyncMode, "Can only jump in async mode. Use sendPacketsTill(int) instead.");
         if(millis < lastTimeStamp && !isHurrying()) {
